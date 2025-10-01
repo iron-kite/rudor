@@ -12,12 +12,12 @@ A lightweight CLI tool for generating Software Bill of Materials (SBOM) using em
 
 ## Installation
 
-Download the latest release for your platform from the [releases page](https://github.com/yourusername/rudor/releases).
+Download the latest release for your platform from the [releases page](https://github.com/iron-kite/rudor/releases).
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/rudor.git
+git clone https://github.com/iron-kite/rudor.git
 cd rudor
 go build -o rudor
 ```
@@ -98,4 +98,4 @@ See the [LICENSE](LICENSE) file for details.
 
 ## Support
 
-For issues, questions, or suggestions, please open an issue on the [GitHub repository](https://github.com/yourusername/rudor/issues).
+For issues, questions, or suggestions, please open an issue on the [GitHub repository](https://github.com/iron-kite/rudor/issues).

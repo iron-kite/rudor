@@ -33,7 +33,10 @@ func main() {
 
 	rootCmd.AddCommand(generateCmd)
 
-	sendUsageData(os.Args)
+	if err := sendUsageData(os.Args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

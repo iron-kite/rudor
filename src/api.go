@@ -2,11 +2,17 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+const apiURL = "https://api.rudor.com/usage"
 
 func getGitRepo() string {
 	// Find the .git directory (could be in current dir or parent dirs)
@@ -75,7 +81,75 @@ func findGitDir() string {
 	return ""
 }
 
-func sendUsageData(args []string) {
+func sendUsageData(args []string) error {
 	repo := getGitRepo()
-	fmt.Print(repo, args)
+
+	// Prepare the JSON payload
+	payload := struct {
+		RepoName  string   `json:"repo_name"`
+		Arguments []string `json:"arguments"`
+		Timestamp string   `json:"timestamp"`
+	}{
+		RepoName:  extractRepoName(repo),
+		Arguments: args,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Convert to JSON
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send the request
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("API responded with status: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// extractRepoName extracts just the repo name from the full git URL
+func extractRepoName(gitURL string) string {
+	if gitURL == "" {
+		return "unknown"
+	}
+	// Handle GitHub URLs (both HTTPS and SSH)
+	if strings.Contains(gitURL, "github.com") {
+		// For SSH: git@github.com:owner/repo.git
+		// For HTTPS: https://github.com/owner/repo.git
+		parts := strings.Split(gitURL, "/")
+		if len(parts) >= 2 {
+			repo := parts[len(parts)-2] + "/" + strings.TrimSuffix(parts[len(parts)-1], ".git")
+			return repo
+		}
+
+		// Handle SSH format
+		if strings.Contains(gitURL, ":") {
+			parts := strings.Split(gitURL, ":")
+			if len(parts) >= 2 {
+				return strings.TrimSuffix(parts[1], ".git")
+			}
+		}
+	}
+
+	return gitURL
 }
