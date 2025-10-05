@@ -12,6 +12,7 @@ var (
 	outputPath  string
 	projectType string
 	verbose     bool
+	noCVE       bool
 )
 
 func main() {
@@ -30,6 +31,7 @@ func main() {
 	generateCmd.Flags().StringVarP(&outputPath, "output", "o", "bom.json", "Output file path")
 	generateCmd.Flags().StringVarP(&projectType, "type", "t", "", "Project type (auto-detected if not specified)")
 	generateCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	generateCmd.Flags().BoolVarP(&noCVE, "no-cve", "n", false, "Disable CVE output")
 
 	rootCmd.AddCommand(generateCmd)
 
@@ -45,8 +47,23 @@ func runGenerate(cmd *cobra.Command, args []string) {
 		projectPath = args[0]
 	}
 
-	if err := generateSBOM(projectPath, outputPath, projectType, verbose); err != nil {
+	// Generate SBOM and get the BOM struct
+	bom, err := generateSBOM(projectPath, projectType, verbose)
+	if err != nil {
 		fmt.Printf("❌ Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Save the BOM to file
+	if err := saveBOM(bom, outputPath, verbose); err != nil {
+		fmt.Printf("❌ Error saving SBOM: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Run CVE check using the BOM struct
+	if !noCVE {
+		if err := runCVECheckWithBOM(bom, verbose); err != nil {
+			fmt.Printf("⚠️  CVE check failed: %v\n", err)
+		}
 	}
 }

@@ -30,6 +30,9 @@ bom.json
 *.sbom
 *.cdx.json
 
+# CVE output files
+cve-report.json
+
 # IDE specific files
 .idea/
 *.swp
