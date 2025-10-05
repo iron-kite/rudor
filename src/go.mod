@@ -1,4 +1,4 @@
-module github.com/yourusername/rudor
+module github.com/iron-kite/rudor
 
 go 1.21
 
