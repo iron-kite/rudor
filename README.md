@@ -8,6 +8,7 @@ A lightweight CLI tool for generating Software Bill of Materials (SBOM) using em
 - 🚀 **Cross-Platform** - Works on Windows, Linux, and macOS
 - 🔍 **Auto-Detection** - Automatically detects project types
 - 📋 **CycloneDX Format** - Generates industry-standard SBOM format
+- 🛡️ **CVE Detection** - Automatic vulnerability scanning using OSV database
 - ⚡ **Simple CLI** - Intuitive command-line interface
 
 ## Installation
@@ -41,6 +42,7 @@ rudor generate /path/to/project
 - `-o, --output <path>` - Output file path (default: `bom.json`)
 - `-t, --type <type>` - Project type (auto-detected if not specified)
 - `-v, --verbose` - Enable verbose output
+- `-n, --no-cve` - Disable automatic CVE vulnerability scanning
 
 ### Examples
 
@@ -57,6 +59,11 @@ rudor generate -t dotnet /path/to/project
 Enable verbose output for debugging:
 ```bash
 rudor generate -v
+```
+
+Disable CVE scanning (only generate SBOM):
+```bash
+rudor generate --no-cve
 ```
 
 ## Supported Project Types
@@ -80,7 +87,27 @@ Rudor embeds platform-specific cdxgen binaries as resources within the CLI execu
 1. The appropriate cdxgen binary is extracted to a temporary location
 2. Cdxgen is executed with your specified parameters
 3. The SBOM is generated in CycloneDX format
-4. Temporary files are automatically cleaned up
+4. Components are automatically scanned for vulnerabilities using the OSV API
+5. A CVE report is generated showing security findings by severity
+6. Temporary files are automatically cleaned up
+
+### CVE Vulnerability Scanning
+
+By default, Rudor automatically checks all components in your SBOM for known vulnerabilities using the [OSV (Open Source Vulnerabilities)](https://osv.dev/) database. The scanner:
+
+- Uses Package URLs (PURLs) from the SBOM for accurate component identification
+- Performs parallel vulnerability checks for fast scanning
+- Queries the OSV API for real-time vulnerability data
+- Categorizes findings by severity: Critical, High, Medium, and Low
+- Generates a detailed JSON report (`cve-report.json`) with all findings
+- Displays a summary with color-coded severity indicators
+
+The vulnerability report includes:
+- CVE/vulnerability identifiers
+- Affected components and versions
+- Severity ratings and CVSS scores
+- Vulnerability descriptions
+- Reference links for remediation
 
 ## Requirements
 
