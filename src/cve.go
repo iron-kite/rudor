@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -242,38 +244,48 @@ func extractComponentsFromBOM(bom *cdx.BOM) []cdx.Component {
 	return components
 }
 
-// checkComponentVulnerabilities queries OSV API for vulnerabilities
+// checkComponentVulnerabilities queries OSV API for vulnerabilities using PURL
 func checkComponentVulnerabilities(component cdx.Component, verbose bool) ([]CVEResult, error) {
 	var results []CVEResult
 
-	// Determine ecosystem based on component type or name patterns
-	ecosystem := determineEcosystem(component)
-	if ecosystem == "" {
-		return results, nil // Skip unknown ecosystems
+	// Use the existing PackageURL from the component
+	if component.PackageURL == "" {
+		return results, nil // Skip components without PURLs
 	}
 
-	// Query OSV API
-	vulns, err := queryOSVAPI(ecosystem, component.Name, component.Version)
+	purl := component.PackageURL
+
+	// Step 1: Query OSV API for vulnerability IDs using PURL
+	vulnIDs, err := queryOSVWithPURL(purl)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert OSV vulnerabilities to CVE results
-	for _, vuln := range vulns {
-		severity, score := extractSeverity(vuln.Severity)
+	// Step 2: Fetch detailed vulnerability information for each ID
+	for _, vulnID := range vulnIDs {
+		vulnDetail, err := getVulnerabilityDetails(vulnID)
+		if err != nil {
+			if verbose {
+				fmt.Printf("⚠️  Warning: Failed to get details for %s: %v\n", vulnID, err)
+			}
+			continue
+		}
 
-		references := make([]string, 0, len(vuln.References))
-		for _, ref := range vuln.References {
+		// Extract severity and score from detailed vulnerability data
+		severity, score := extractSeverityFromDetail(vulnDetail)
+
+		references := make([]string, 0, len(vulnDetail.References))
+		for _, ref := range vulnDetail.References {
 			references = append(references, ref.URL)
 		}
 
 		result := CVEResult{
-			CVE:         vuln.ID,
+			CVE:         vulnDetail.ID,
 			Component:   component.Name,
 			Version:     component.Version,
 			Severity:    severity,
 			Score:       score,
-			Description: vuln.Summary,
+			Description: vulnDetail.Summary,
 			References:  references,
 		}
 
@@ -283,105 +295,121 @@ func checkComponentVulnerabilities(component cdx.Component, verbose bool) ([]CVE
 	return results, nil
 }
 
-// determineEcosystem maps component types to OSV ecosystems
-func determineEcosystem(component cdx.Component) string {
-	// Check for common package manager indicators
-	switch {
-	case strings.Contains(strings.ToLower(component.Name), "npm:") ||
-		strings.Contains(strings.ToLower(component.Group), "npm"):
-		return "npm"
-	case strings.Contains(strings.ToLower(component.Name), "pypi:") ||
-		strings.Contains(strings.ToLower(component.Group), "pypi"):
-		return "PyPI"
-	case strings.Contains(strings.ToLower(component.Name), "maven:") ||
-		strings.Contains(strings.ToLower(component.Group), "maven"):
-		return "Maven"
-	case strings.Contains(strings.ToLower(component.Name), "nuget:") ||
-		strings.Contains(strings.ToLower(component.Group), "nuget"):
-		return "NuGet"
-	case strings.Contains(strings.ToLower(component.Name), "cargo:") ||
-		strings.Contains(strings.ToLower(component.Group), "cargo"):
-		return "crates.io"
-	case strings.Contains(strings.ToLower(component.Name), "golang:") ||
-		strings.Contains(strings.ToLower(component.Group), "golang") ||
-		strings.Contains(component.Name, "github.com/"):
-		return "Go"
-	default:
-		// Try to guess from component type
-		switch component.Type {
-		case cdx.ComponentTypeLibrary:
-			// Default to npm for libraries if no other indicator
-			return "npm"
-		default:
-			return ""
-		}
-	}
-}
-
-// queryOSVAPI queries the OSV database for vulnerabilities
-func queryOSVAPI(ecosystem, name, version string) ([]OSVVuln, error) {
+// queryOSVWithPURL queries OSV API using PURL to get vulnerability IDs
+func queryOSVWithPURL(purl string) ([]string, error) {
 	const osvURL = "https://api.osv.dev/v1/query"
 
 	queryData := map[string]interface{}{
 		"package": map[string]string{
-			"ecosystem": ecosystem,
-			"name":      name,
+			"purl": purl,
 		},
-		"version": version,
 	}
 
 	jsonData, err := json.Marshal(queryData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal query: %w", err)
+		return nil, fmt.Errorf("failed to marshal PURL query: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", osvURL, strings.NewReader(string(jsonData)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create PURL request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query OSV API: %w", err)
+		return nil, fmt.Errorf("failed to query OSV API with PURL: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OSV API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("OSV PURL API returned status %d", resp.StatusCode)
 	}
 
 	var osvResp OSVResponse
 	if err := json.NewDecoder(resp.Body).Decode(&osvResp); err != nil {
-		return nil, fmt.Errorf("failed to decode OSV response: %w", err)
+		return nil, fmt.Errorf("failed to decode OSV PURL response: %w", err)
 	}
 
-	return osvResp.Vulns, nil
+	// Extract vulnerability IDs
+	var vulnIDs []string
+	for _, vuln := range osvResp.Vulns {
+		vulnIDs = append(vulnIDs, vuln.ID)
+	}
+
+	return vulnIDs, nil
 }
 
-// extractSeverity extracts severity information from OSV vulnerability
-func extractSeverity(severities []OSVSeverity) (string, float64) {
-	for _, sev := range severities {
-		if sev.Type == "CVSS_V3" {
-			// Parse CVSS score if available
-			score := parseCVSSScore(sev.Score)
-			severity := cvssScoreToSeverity(score)
-			return severity, score
-		}
+// getVulnerabilityDetails fetches detailed vulnerability information by ID
+func getVulnerabilityDetails(vulnID string) (*OSVVuln, error) {
+	url := fmt.Sprintf("https://api.osv.dev/v1/vulns/%s", vulnID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vulnerability details request: %w", err)
 	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vulnerability details: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OSV vulnerability API returned status %d", resp.StatusCode)
+	}
+
+	// Read the entire response body into a byte slice
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalf("Error reading response body: %v", err)
+	}
+
+	// Convert the byte slice to a string
+	bodyString := string(bodyBytes)
+
+	var vulnDetail OSVVuln
+	if err := json.NewDecoder(strings.NewReader(bodyString)).Decode(&vulnDetail); err != nil {
+		return nil, fmt.Errorf("failed to decode vulnerability details: %w", err)
+	}
+
+	return &vulnDetail, nil
+}
+
+// extractSeverityFromDetail extracts the best available severity and score
+func extractSeverityFromDetail(vuln *OSVVuln) (string, float64) {
+	// Look for CVSS scores in order of preference (newest first)
+	for _, sev := range vuln.Severity {
+		score := parseCVSSScoreFromVector(sev.Score)
+		return cvssScoreToSeverity(score), score
+	}
+
 	return "UNKNOWN", 0.0
 }
 
-// parseCVSSScore extracts numeric score from CVSS string
-func parseCVSSScore(cvssString string) float64 {
-	// Simple parsing - in real implementation you'd parse the full CVSS vector
-	// For now, just try to extract any numeric value
-	parts := strings.Split(cvssString, "/")
-	for _, part := range parts {
-		_ = strings.HasPrefix(part, "S:") || strings.HasPrefix(part, "score:")
-		// Extract score value
-		// This is simplified - real CVSS parsing would be more complex
+// parseCVSSScoreFromVector extracts numeric score from CVSS vector string
+func parseCVSSScoreFromVector(cvssVector string) float64 {
+	// CVSS vectors typically look like: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+	// For now, we'll use a simple approach to extract or calculate the score
+
+	// Common CVSS vector patterns and their approximate scores
+	if strings.Contains(cvssVector, "C:H/I:H/A:H") {
+		return 9.0 // Critical
+	} else if strings.Contains(cvssVector, "C:H") || strings.Contains(cvssVector, "I:H") || strings.Contains(cvssVector, "A:H") {
+		return 7.5 // High
+	} else if strings.Contains(cvssVector, "C:L") || strings.Contains(cvssVector, "I:L") || strings.Contains(cvssVector, "A:L") {
+		return 4.0 // Medium
 	}
+
+	// Try to extract explicit score if present (some APIs include it)
+	parts := strings.Split(cvssVector, "/")
+	for _, part := range parts {
+		if strings.HasPrefix(part, "S:") || strings.Contains(part, "score:") {
+			// This would need more sophisticated parsing
+			// For now, return a default
+		}
+	}
+
 	return 5.0 // Default medium score
 }
 
