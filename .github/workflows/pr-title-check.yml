@@ -1,0 +1,56 @@
+name: Pull Request Title Check
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+
+jobs:
+  pr-title-lint:
+    name: Validate PR Title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title format
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # Define allowed prefixes
+          ALLOWED_PREFIXES=(
+            "feat:"
+            "fix:"
+            "perf:"
+            "docs:"
+            "chore:"
+            "test:"
+            "refactor:"
+            "ci:"
+            "build:"
+          )
+
+          # Check if title starts with any allowed prefix
+          VALID=false
+          for prefix in "${ALLOWED_PREFIXES[@]}"; do
+            if [[ "$PR_TITLE" == "$prefix"* ]]; then
+              VALID=true
+
+              # Extract the subject (everything after the prefix)
+              SUBJECT="${PR_TITLE#$prefix}"
+              SUBJECT="${SUBJECT# }"
+
+              # Check if subject starts with uppercase letter
+              if [[ ! "$SUBJECT" =~ ^[A-Z] ]]; then
+                echo "PR title subject must start with an uppercase letter"
+                exit 1
+              fi
+
+              break
+            fi
+          done
+
+          if [ "$VALID" = false ]; then
+            PREFIXES_LIST=$(IFS=', '; echo "${ALLOWED_PREFIXES[*]}")
+            echo "PR title must start with: $PREFIXES_LIST"
+            exit 1
+          fi

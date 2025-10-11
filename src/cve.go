@@ -407,6 +407,8 @@ func parseCVSSScoreFromVector(cvssVector string) float64 {
 		if strings.HasPrefix(part, "S:") || strings.Contains(part, "score:") {
 			// This would need more sophisticated parsing
 			// For now, return a default
+			// TODO: Parse the score
+			return 5.0 // Default medium score
 		}
 	}
 
