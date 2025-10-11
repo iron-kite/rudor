@@ -114,6 +114,69 @@ The vulnerability report includes:
 - Go 1.21+ (for building from source)
 - No external dependencies required for the compiled executable
 
+## Development
+
+### Release Process
+
+Rudor uses automated semantic versioning with GoReleaser. Releases are triggered by pushing version tags to the repository.
+
+**Creating a new release:**
+
+```bash
+# Create and push a version tag
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The GitHub Actions workflow will automatically:
+- Build binaries for all supported platforms (Linux, macOS amd64/arm64, Windows)
+- Generate checksums
+- Create a GitHub release with changelog
+- Upload all artifacts
+
+**Commit Convention**
+
+To maintain a clean and organized changelog, please follow conventional commit format:
+
+- `feat:` - New features (e.g., `feat: add JSON output format`)
+- `fix:` - Bug fixes (e.g., `fix: resolve parsing error for Go modules`)
+- `perf:` - Performance improvements (e.g., `perf: optimize CVE scanning`)
+- `docs:` - Documentation changes (e.g., `docs: update installation guide`)
+- `chore:` - Maintenance tasks (e.g., `chore: update dependencies`)
+- `test:` - Test additions or changes (e.g., `test: add unit tests for SBOM parser`)
+
+Commits with `feat:`, `fix:`, and `perf:` prefixes will be automatically included in the release changelog, grouped by category.
+
+**Example workflow:**
+```bash
+# Create a feature branch
+git checkout -b feature/rust-support
+
+# Make changes
+git add .
+git commit -m "feat: add support for Rust projects"
+git push origin feature/rust-support
+
+# Open a pull request with a conventional commit title
+# PR title: "feat: Add support for Rust projects"
+
+# After PR is merged to main, create a release
+git checkout main
+git pull origin main
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+### CI/CD Pipeline
+
+The project uses GitHub Actions for continuous integration:
+
+- **Lint**: Code quality checks with golangci-lint
+- **Build**: Cross-platform compilation for all supported architectures
+- **Security**: Static analysis with Gosec and Trivy
+- **Dependency Check**: Vulnerability scanning with govulncheck
+- **Release**: Automated releases with GoReleaser on version tags
+
 ## License
 
 See the [LICENSE](LICENSE) file for details.

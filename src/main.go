@@ -9,6 +9,12 @@ import (
 )
 
 var (
+	// Version information (set by GoReleaser)
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+
+	// Command flags
 	outputPath  string
 	projectType string
 	verbose     bool
@@ -17,8 +23,9 @@ var (
 
 func main() {
 	var rootCmd = &cobra.Command{
-		Use:   "rudor",
-		Short: "Simple SBOM generator using embedded cdxgen",
+		Use:     "rudor",
+		Short:   "Simple SBOM generator using embedded cdxgen",
+		Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
 	}
 
 	var generateCmd = &cobra.Command{
@@ -41,7 +48,7 @@ func main() {
 	}
 }
 
-func runGenerate(cmd *cobra.Command, args []string) {
+func runGenerate(_ *cobra.Command, args []string) {
 	projectPath := "."
 	if len(args) > 0 {
 		projectPath = args[0]
