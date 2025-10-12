@@ -2,12 +2,13 @@ version: 2
 
 before:
   hooks:
-    - go mod tidy
-    - go mod download
+    - sh -c "cd src && go mod tidy"
+    - sh -c "cd src && go mod download"
 
 builds:
   - id: rudor
-    main: ./src
+    dir: ./src
+    main: .
     binary: rudor
     env:
       - CGO_ENABLED=0
