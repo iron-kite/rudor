@@ -14,6 +14,9 @@ import (
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	gocvss30 "github.com/pandatix/go-cvss/30"
+	gocvss31 "github.com/pandatix/go-cvss/31"
+	gocvss40 "github.com/pandatix/go-cvss/40"
 )
 
 // CVEResult represents a vulnerability finding
@@ -380,55 +383,44 @@ func getVulnerabilityDetails(vulnID string) (*OSVVuln, error) {
 func extractSeverityFromDetail(vuln *OSVVuln) (string, float64) {
 	// Look for CVSS scores in order of preference (newest first)
 	for _, sev := range vuln.Severity {
-		score := parseCVSSScoreFromVector(sev.Score)
-		return cvssScoreToSeverity(score), score
-	}
-
-	return "UNKNOWN", 0.0
-}
-
-// parseCVSSScoreFromVector extracts numeric score from CVSS vector string
-func parseCVSSScoreFromVector(cvssVector string) float64 {
-	// CVSS vectors typically look like: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
-	// For now, we'll use a simple approach to extract or calculate the score
-
-	// Common CVSS vector patterns and their approximate scores
-	if strings.Contains(cvssVector, "C:H/I:H/A:H") {
-		return 9.0 // Critical
-	} else if strings.Contains(cvssVector, "C:H") || strings.Contains(cvssVector, "I:H") || strings.Contains(cvssVector, "A:H") {
-		return 7.5 // High
-	} else if strings.Contains(cvssVector, "C:L") || strings.Contains(cvssVector, "I:L") || strings.Contains(cvssVector, "A:L") {
-		return 4.0 // Medium
-	}
-
-	// Try to extract explicit score if present (some APIs include it)
-	parts := strings.Split(cvssVector, "/")
-	for _, part := range parts {
-		if strings.HasPrefix(part, "S:") || strings.Contains(part, "score:") {
-			// This would need more sophisticated parsing
-			// For now, return a default
-			// TODO: Parse the score
-			return 5.0 // Default medium score
+		switch {
+		case strings.HasPrefix(sev.Score, "CVSS:3.0"):
+			cvss, err := gocvss30.ParseVector(sev.Score)
+			if err != nil {
+				log.Fatal(err)
+			}
+			baseScore := cvss.BaseScore()
+			rating, err := gocvss30.Rating(baseScore)
+			if err != nil {
+				rating = "UNKNOWN"
+			}
+			return rating, baseScore
+		case strings.HasPrefix(sev.Score, "CVSS:3.1"):
+			cvss, err := gocvss31.ParseVector(sev.Score)
+			if err != nil {
+				log.Fatal(err)
+			}
+			baseScore := cvss.BaseScore()
+			rating, err := gocvss31.Rating(baseScore)
+			if err != nil {
+				rating = "UNKNOWN"
+			}
+			return rating, baseScore
+		case strings.HasPrefix(sev.Score, "CVSS:4.0"):
+			cvss, err := gocvss40.ParseVector(sev.Score)
+			if err != nil {
+				log.Fatal(err)
+			}
+			baseScore := cvss.Score()
+			rating, err := gocvss40.Rating(baseScore)
+			if err != nil {
+				rating = "UNKNOWN"
+			}
+			return rating, baseScore
 		}
 	}
 
-	return 5.0 // Default medium score
-}
-
-// cvssScoreToSeverity converts CVSS score to severity level
-func cvssScoreToSeverity(score float64) string {
-	switch {
-	case score >= 9.0:
-		return "CRITICAL"
-	case score >= 7.0:
-		return "HIGH"
-	case score >= 4.0:
-		return "MEDIUM"
-	case score > 0.0:
-		return "LOW"
-	default:
-		return "UNKNOWN"
-	}
+	return "UNKNOWN", 0.0
 }
 
 // processAndDisplayResults analyzes and displays the vulnerability report
@@ -490,7 +482,7 @@ func processAndDisplayResults(report *CVEReport, verbose bool) {
 
 		for _, vuln := range report.Vulnerabilities {
 			icon := getSeverityIcon(vuln.Severity)
-			fmt.Printf("\n%s %s [%s]\n", icon, vuln.CVE, vuln.Severity)
+			fmt.Printf("\n%s %s [%s (%.2f)]\n", icon, vuln.CVE, vuln.Severity, vuln.Score)
 			fmt.Printf("   Component: %s@%s\n", vuln.Component, vuln.Version)
 			if vuln.Description != "" {
 				fmt.Printf("   Description: %s\n", vuln.Description)
