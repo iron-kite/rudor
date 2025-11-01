@@ -1,21 +1,6 @@
-FROM golang:1.23-alpine AS builder
-
-RUN apk add --no-cache git ca-certificates
-
-ARG TARGETOS
-ARG TARGETARCH
-
-WORKDIR /build
-
-COPY src/go.mod src/go.sum ./
-
-RUN go mod download
-
-COPY src/ .
-
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o rudor .
-
 FROM alpine:latest
+
+ARG TARGETARCH
 
 LABEL org.opencontainers.image.title="Rudor"
 LABEL org.opencontainers.image.description="Lightweight SBOM generator with CVE scanning"
@@ -28,9 +13,9 @@ RUN apk --no-cache add ca-certificates && \
 
 WORKDIR /app
 
-COPY --from=builder /build/rudor /app/rudor
+COPY build/rudor-linux-${TARGETARCH} /app/rudor
 
-RUN chown rudor:rudor /app/rudor
+RUN chown rudor:rudor /app/rudor && chmod +x /app/rudor
 
 USER rudor
 
