@@ -1,8 +1,8 @@
 name: Test Rudor Scan Action
 
 on:
-  pull_request:
-    branches: [ main ]
+  push:
+    branches: [ test ]
   workflow_dispatch:
 
 jobs:
