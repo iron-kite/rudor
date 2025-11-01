@@ -13,6 +13,15 @@ A lightweight CLI tool for generating Software Bill of Materials (SBOM) using em
 
 ## Installation
 
+### Using Docker
+
+Pull the pre-built multi-architecture Docker image:
+```bash
+docker pull ghcr.io/iron-kite/rudor:latest
+```
+
+### Download Binary
+
 Download the latest release for your platform from the [releases page](https://github.com/iron-kite/rudor/releases).
 
 ### Build from Source
@@ -64,6 +73,43 @@ rudor generate -v
 Disable CVE scanning (only generate SBOM):
 ```bash
 rudor generate --no-cve
+```
+
+### Using Docker
+
+Run Rudor using the pre-built Docker image (supports both ARM64 and AMD64):
+
+Generate SBOM for the current directory:
+```bash
+docker run --rm -v $(pwd):/workspace -w /workspace ghcr.io/iron-kite/rudor:latest generate
+```
+
+Generate SBOM with custom output file:
+```bash
+docker run --rm -v $(pwd):/workspace -w /workspace ghcr.io/iron-kite/rudor:latest generate -o my-sbom.json
+```
+
+Scan a specific subdirectory:
+```bash
+docker run --rm -v $(pwd):/workspace -w /workspace ghcr.io/iron-kite/rudor:latest generate /workspace/my-project
+```
+
+Run with all options:
+```bash
+docker run --rm -v $(pwd):/workspace -w /workspace ghcr.io/iron-kite/rudor:latest generate -v -o sbom.json -t python
+```
+
+If you encounter permission issues with output files, run with your user ID:
+```bash
+docker run --rm --user $(id -u):$(id -g) -v $(pwd):/workspace -w /workspace ghcr.io/iron-kite/rudor:latest generate
+```
+
+Build the Docker image locally:
+```bash
+docker build -t rudor:latest .
+
+# Multi-architecture build
+docker buildx build --platform linux/amd64,linux/arm64 -t rudor:latest .
 ```
 
 ## Supported Project Types
@@ -173,6 +219,7 @@ The project uses GitHub Actions for continuous integration:
 
 - **Lint**: Code quality checks with golangci-lint
 - **Build**: Cross-platform compilation for all supported architectures
+- **Docker**: Multi-architecture Docker image builds (linux/amd64, linux/arm64)
 - **Security**: Static analysis with Gosec and Trivy
 - **Dependency Check**: Vulnerability scanning with govulncheck
 - **Release**: Automated releases with GoReleaser on version tags
