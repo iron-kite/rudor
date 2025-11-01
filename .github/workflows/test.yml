@@ -1,0 +1,37 @@
+name: Test Rudor Scan Action
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-rudor-scan:
+    name: Test Rudor Scan Action
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Rudor Scan
+        uses: iron-kite/rudor-scan@init
+        with:
+          path: .
+          output: sbom.json
+          upload-sarif: true
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+
+      - name: Upload CVE report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cve-report
+          path: cve-report.json
