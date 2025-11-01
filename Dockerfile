@@ -1,4 +1,4 @@
-FROM gcr.io/distroless/static-debian12
+FROM python:3.12-slim
 
 ARG TARGETARCH
 
@@ -8,6 +8,9 @@ LABEL org.opencontainers.image.source="https://github.com/iron-kite/rudor"
 LABEL org.opencontainers.image.licenses="See LICENSE file"
 
 WORKDIR /app
+
+# Create non-root user
+RUN groupadd -r nonroot && useradd -r -g nonroot nonroot
 
 COPY --chown=nonroot:nonroot build/rudor-linux-${TARGETARCH} /app/rudor
 
