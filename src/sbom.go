@@ -11,12 +11,16 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 )
 
-func generateSBOM(projectPath, projType string, verbose bool) (*cdx.BOM, error) {
-	var tempBinaryPath string
+func generateSBOM(projectPath, projType string, verbose bool) (bom *cdx.BOM, err error) {
+	var cachedBinaryPath string
 	defer func() {
-		if tempBinaryPath != "" && fileExists(tempBinaryPath) {
-			if err := os.Remove(tempBinaryPath); err != nil && verbose {
-				fmt.Printf("⚠️ Warning: Could not delete temporary file %s: %v\n", tempBinaryPath, err)
+		if err == nil {
+			return
+		}
+
+		if cachedBinaryPath != "" && fileExists(cachedBinaryPath) {
+			if err := os.Remove(cachedBinaryPath); err != nil && verbose {
+				fmt.Printf("⚠️ Warning: Could not delete temporary file %s: %v\n", cachedBinaryPath, err)
 			}
 		}
 	}()
@@ -34,8 +38,8 @@ func generateSBOM(projectPath, projType string, verbose bool) (*cdx.BOM, error) 
 
 	fmt.Printf("🔍 Generating SBOM for: %s\n", absolutePath)
 
-	// Extract embedded binary to temporary location
-	tempBinaryPath, err = extractEmbeddedBinary(verbose)
+	// Extract embedded binary to cache (or use cached version)
+	cachedBinaryPath, err = extractEmbeddedBinary(verbose)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract embedded binary: %w", err)
 	}
@@ -67,7 +71,7 @@ func generateSBOM(projectPath, projType string, verbose bool) (*cdx.BOM, error) 
 	args = append(args, absolutePath)
 
 	if verbose {
-		fmt.Printf("Running: %s %s\n", tempBinaryPath, strings.Join(args, " "))
+		fmt.Printf("Running: %s %s\n", cachedBinaryPath, strings.Join(args, " "))
 	}
 
 	if verbose {
@@ -75,7 +79,7 @@ func generateSBOM(projectPath, projType string, verbose bool) (*cdx.BOM, error) 
 	}
 
 	// Execute cdxgen
-	cmd := exec.Command(tempBinaryPath, args...)
+	cmd := exec.Command(cachedBinaryPath, args...)
 
 	if verbose {
 		cmd.Stdout = os.Stdout
@@ -95,7 +99,7 @@ func generateSBOM(projectPath, projType string, verbose bool) (*cdx.BOM, error) 
 	}
 
 	// Enhance the BOM with Rudor metadata and return it
-	bom, err := enhanceBOM(tempBOMPath, verbose)
+	bom, err = enhanceBOM(tempBOMPath, verbose)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enhance BOM: %w", err)
 	}
@@ -110,41 +114,45 @@ func extractEmbeddedBinary(verbose bool) (string, error) {
 		return "", err
 	}
 
+	// Get the current working directory
+	path, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current working directory: %w", err)
+	}
+	// Build versioned cache filename (e.g., cdxgen-1.0.0.exe)
+	extension := filepath.Ext(binaryName)
+	cachedFileName := fmt.Sprintf("cdxgen-%s%s", version, extension)
+	cachedPath := filepath.Join(path, cachedFileName)
+
+	// Check if cached binary already exists
+	if fileExists(cachedPath) {
+		if verbose {
+			fmt.Printf("✅ Using cached binary: %s\n", cachedPath)
+		}
+		return cachedPath, nil
+	}
+
 	if verbose {
 		fmt.Printf("🔧 Extracting embedded binary: %s\n", binaryName)
 	}
 
-	// Create temporary file
-	tempFile, err := os.CreateTemp("", "cdxgen-*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temporary file: %w", err)
-	}
-	tempPath := tempFile.Name()
-	tempFile.Close()
-
-	// On Windows, add .exe extension
-	if runtime.GOOS == "windows" {
-		os.Remove(tempPath)
-		tempPath = tempPath + ".exe"
-	}
-
-	// Write embedded binary to temporary file
-	if err := os.WriteFile(tempPath, binaryData, 0755); err != nil {
-		return "", fmt.Errorf("failed to write binary to temporary file: %w", err)
+	// Write embedded binary to cache
+	if err := os.WriteFile(cachedPath, binaryData, 0755); err != nil {
+		return "", fmt.Errorf("failed to write binary to cache: %w", err)
 	}
 
 	// Make executable on Unix-like systems
 	if runtime.GOOS != "windows" {
-		if err := os.Chmod(tempPath, 0755); err != nil {
+		if err := os.Chmod(cachedPath, 0755); err != nil {
 			return "", fmt.Errorf("failed to make binary executable: %w", err)
 		}
 	}
 
 	if verbose {
-		fmt.Printf("✅ Binary extracted to: %s\n", tempPath)
+		fmt.Printf("✅ Binary cached to: %s\n", cachedPath)
 	}
 
-	return tempPath, nil
+	return cachedPath, nil
 }
 
 func getEmbeddedBinary() ([]byte, string, error) {
@@ -199,7 +207,7 @@ func enhanceBOM(inputPath string, verbose bool) (*cdx.BOM, error) {
 	rudorComponent := &cdx.Component{
 		Type:      cdx.ComponentTypeApplication,
 		Name:      appName,
-		Version:   getVersion(),
+		Version:   version,
 		Publisher: orgName,
 		Authors: &[]cdx.OrganizationalContact{
 			{
@@ -277,9 +285,4 @@ func getBinaryName() string {
 	}
 
 	return binaryName
-}
-
-// getVersion returns the version, defaulting to "1.0.0" if not set
-func getVersion() string {
-	return "1.0.0"
 }
