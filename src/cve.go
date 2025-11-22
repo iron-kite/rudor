@@ -95,6 +95,30 @@ type OSVEvent struct {
 	Fixed      string `json:"fixed,omitempty"`
 }
 
+// OSVBatchRequest represents a batch query request
+type OSVBatchRequest struct {
+	Queries []OSVQuery `json:"queries"`
+}
+
+type OSVQuery struct {
+	Package   OSVQueryPackage `json:"package"`
+	PageToken string          `json:"page_token,omitempty"`
+}
+
+type OSVQueryPackage struct {
+	PURL string `json:"purl"`
+}
+
+// OSVBatchResponse represents the batch query response
+type OSVBatchResponse struct {
+	Results []OSVBatchResult `json:"results"`
+}
+
+type OSVBatchResult struct {
+	Vulns         []OSVVuln `json:"vulns"`
+	NextPageToken string    `json:"next_page_token,omitempty"`
+}
+
 // runCVECheckWithBOM performs vulnerability scanning on the provided BOM struct
 func runCVECheckWithBOM(bom *cdx.BOM, verbose bool) error {
 	if verbose {
@@ -119,8 +143,11 @@ func runCVECheckWithBOM(bom *cdx.BOM, verbose bool) error {
 		Vulnerabilities: []CVEResult{},
 	}
 
-	// Use parallel processing for CVE checking
-	vulnerabilities := checkComponentsInParallel(components, verbose)
+	// Use batch query for CVE checking
+	vulnerabilities, err := checkComponentsWithBatch(components, verbose)
+	if err != nil {
+		return fmt.Errorf("failed to check components for vulnerabilities: %w", err)
+	}
 	report.Vulnerabilities = vulnerabilities
 
 	// Process and display results
@@ -137,100 +164,173 @@ func runCVECheckWithBOM(bom *cdx.BOM, verbose bool) error {
 	return nil
 }
 
-// ComponentResult represents the result of checking a single component
-type ComponentResult struct {
-	Component       cdx.Component
-	Vulnerabilities []CVEResult
-	Error           error
-}
-
-// checkComponentsInParallel processes components in parallel using worker pools
-func checkComponentsInParallel(components []cdx.Component, verbose bool) []CVEResult {
-	// Determine optimal number of workers based on CPU count and component count
-	numWorkers := runtime.NumCPU() * 2 // Use 2x CPU cores for I/O bound operations
-	if len(components) < numWorkers {
-		numWorkers = len(components)
+// checkComponentsWithBatch processes all components using OSV batch query API
+func checkComponentsWithBatch(components []cdx.Component, verbose bool) ([]CVEResult, error) {
+	if verbose {
+		fmt.Printf("🚀 Using batch query for %d components\n", len(components))
 	}
 
-	// Limit max workers to avoid overwhelming the API
-	if numWorkers > 10 {
-		numWorkers = 10
+	// Build batch request
+	var queries []OSVQuery
+	var componentMap = make(map[int]cdx.Component)
+
+	for _, component := range components {
+		if component.PackageURL != "" {
+			queries = append(queries, OSVQuery{
+				Package: OSVQueryPackage{
+					PURL: component.PackageURL,
+				},
+			})
+			componentMap[len(queries)-1] = component
+		}
+	}
+
+	if len(queries) == 0 {
+		if verbose {
+			fmt.Println("⚠️  No components with valid PURLs found")
+		}
+		return []CVEResult{}, nil
+	}
+
+	// Split queries into chunks to avoid API limits
+	// OSV API recommends keeping batches reasonable in size
+	const maxBatchSize = 1000
+	var allBatchResults []OSVBatchResult
+
+	for i := 0; i < len(queries); i += maxBatchSize {
+		end := i + maxBatchSize
+		if end > len(queries) {
+			end = len(queries)
+		}
+
+		batchQueries := queries[i:end]
+
+		if verbose {
+			fmt.Printf("📤 Sending batch query %d-%d of %d components\n", i+1, end, len(queries))
+		}
+
+		// Query OSV API with batch request
+		batchResults, err := queryOSVBatch(batchQueries, verbose)
+		if err != nil {
+			return nil, fmt.Errorf("batch query failed for queries %d-%d: %w", i+1, end, err)
+		}
+
+		allBatchResults = append(allBatchResults, batchResults.Results...)
 	}
 
 	if verbose {
-		fmt.Printf("🚀 Using %d parallel workers for vulnerability checking\n", numWorkers)
+		fmt.Printf("📥 Received batch results\n")
 	}
 
-	// Create channels for work distribution
-	componentChan := make(chan cdx.Component, len(components))
-	resultChan := make(chan ComponentResult, len(components))
-
-	// Rate limiter: allow up to 20 requests per second across all workers
-	rateLimiter := time.NewTicker(50 * time.Millisecond)
-	defer rateLimiter.Stop()
-
-	// Start workers
-	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-			for component := range componentChan {
-				// Wait for rate limiter
-				<-rateLimiter.C
-
-				if verbose {
-					fmt.Printf("🔍 Worker %d checking: %s@%s\n", workerID+1, component.Name, component.Version)
-				}
-
-				vulns, err := checkComponentVulnerabilities(component, false) // Don't pass verbose to avoid spam
-				resultChan <- ComponentResult{
-					Component:       component,
-					Vulnerabilities: vulns,
-					Error:           err,
-				}
-			}
-		}(i)
-	}
-
-	// Send all components to workers
-	go func() {
-		for _, component := range components {
-			componentChan <- component
+	// Collect all unique vulnerability IDs
+	vulnIDMap := make(map[string]bool)
+	for _, result := range allBatchResults {
+		for _, vuln := range result.Vulns {
+			vulnIDMap[vuln.ID] = true
 		}
-		close(componentChan)
-	}()
+	}
 
-	// Collect results
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
+	if verbose {
+		fmt.Printf("🔍 Fetching details for %d unique vulnerabilities\n", len(vulnIDMap))
+	}
 
-	// Process results
+	// Fetch detailed information for all vulnerabilities in parallel
+	vulnDetails := fetchVulnerabilityDetailsInParallel(vulnIDMap, verbose)
+
+	// Map vulnerabilities back to components
 	var allVulnerabilities []CVEResult
-	processedCount := 0
-	for result := range resultChan {
-		processedCount++
-		if verbose {
-			fmt.Printf("✅ Processed %d/%d: %s\n", processedCount, len(components), result.Component.Name)
-		}
+	for idx, result := range allBatchResults {
+		component := componentMap[idx]
 
-		if result.Error != nil {
-			if verbose {
-				fmt.Printf("⚠️  Warning: Failed to check %s: %v\n", result.Component.Name, result.Error)
+		for _, vuln := range result.Vulns {
+			if detail, ok := vulnDetails[vuln.ID]; ok {
+				severity, score := extractSeverityFromDetail(detail)
+
+				references := make([]string, 0, len(detail.References))
+				for _, ref := range detail.References {
+					references = append(references, ref.URL)
+				}
+
+				cveResult := CVEResult{
+					CVE:         detail.ID,
+					Component:   component.Name,
+					Version:     component.Version,
+					Severity:    severity,
+					Score:       score,
+					Description: detail.Summary,
+					References:  references,
+				}
+
+				allVulnerabilities = append(allVulnerabilities, cveResult)
 			}
-			continue
 		}
-
-		allVulnerabilities = append(allVulnerabilities, result.Vulnerabilities...)
 	}
 
 	if verbose {
 		fmt.Printf("🏁 Completed vulnerability checking for all %d components\n", len(components))
 	}
 
-	return allVulnerabilities
+	return allVulnerabilities, nil
+}
+
+// fetchVulnerabilityDetailsInParallel fetches detailed vulnerability information in parallel
+func fetchVulnerabilityDetailsInParallel(vulnIDMap map[string]bool, verbose bool) map[string]*OSVVuln {
+	vulnDetails := make(map[string]*OSVVuln)
+	var mu sync.Mutex
+
+	// Convert map to slice
+	var vulnIDs []string
+	for id := range vulnIDMap {
+		vulnIDs = append(vulnIDs, id)
+	}
+
+	if len(vulnIDs) == 0 {
+		return vulnDetails
+	}
+
+	// Use worker pool for fetching details
+	numWorkers := runtime.NumCPU() * 2
+	if len(vulnIDs) < numWorkers {
+		numWorkers = len(vulnIDs)
+	}
+	if numWorkers > 10 {
+		numWorkers = 10
+	}
+
+	idChan := make(chan string, len(vulnIDs))
+	var wg sync.WaitGroup
+
+	// Start workers
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for vulnID := range idChan {
+				detail, err := getVulnerabilityDetails(vulnID)
+				if err != nil {
+					if verbose {
+						fmt.Printf("⚠️  Warning: Failed to get details for %s: %v\n", vulnID, err)
+					}
+					continue
+				}
+
+				mu.Lock()
+				vulnDetails[vulnID] = detail
+				mu.Unlock()
+			}
+		}()
+	}
+
+	// Send IDs to workers
+	for _, id := range vulnIDs {
+		idChan <- id
+	}
+	close(idChan)
+
+	// Wait for completion
+	wg.Wait()
+
+	return vulnDetails
 }
 
 // extractComponentsFromBOM extracts components from a BOM struct
@@ -247,100 +347,75 @@ func extractComponentsFromBOM(bom *cdx.BOM) []cdx.Component {
 	return components
 }
 
-// checkComponentVulnerabilities queries OSV API for vulnerabilities using PURL
-func checkComponentVulnerabilities(component cdx.Component, verbose bool) ([]CVEResult, error) {
-	var results []CVEResult
+// queryOSVBatch sends a batch query to OSV API and handles pagination
+func queryOSVBatch(queries []OSVQuery, verbose bool) (*OSVBatchResponse, error) {
+	const osvBatchURL = "https://api.osv.dev/v1/querybatch"
 
-	// Use the existing PackageURL from the component
-	if component.PackageURL == "" {
-		return results, nil // Skip components without PURLs
-	}
+	var allResults []OSVBatchResult
+	currentQueries := queries
 
-	purl := component.PackageURL
+	// Keep querying until no more next_page_tokens are returned
+	for len(currentQueries) > 0 {
+		batchRequest := OSVBatchRequest{
+			Queries: currentQueries,
+		}
 
-	// Step 1: Query OSV API for vulnerability IDs using PURL
-	vulnIDs, err := queryOSVWithPURL(purl)
-	if err != nil {
-		return nil, err
-	}
-
-	// Step 2: Fetch detailed vulnerability information for each ID
-	for _, vulnID := range vulnIDs {
-		vulnDetail, err := getVulnerabilityDetails(vulnID)
+		jsonData, err := json.Marshal(batchRequest)
 		if err != nil {
-			if verbose {
-				fmt.Printf("⚠️  Warning: Failed to get details for %s: %v\n", vulnID, err)
+			return nil, fmt.Errorf("failed to marshal batch query: %w", err)
+		}
+
+		req, err := http.NewRequest("POST", osvBatchURL, strings.NewReader(string(jsonData)))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create batch request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query OSV batch API: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("OSV batch API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var batchResp OSVBatchResponse
+		if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
+			return nil, fmt.Errorf("failed to decode OSV batch response: %w", err)
+		}
+
+		// Collect results and check for pagination
+		var nextQueries []OSVQuery
+		for i, result := range batchResp.Results {
+			// Add current result
+			if i < len(allResults) {
+				// Append to existing result
+				allResults[i].Vulns = append(allResults[i].Vulns, result.Vulns...)
+			} else {
+				// Add new result
+				allResults = append(allResults, result)
 			}
-			continue
+
+			// Check if this query has more pages
+			if result.NextPageToken != "" {
+				if verbose {
+					fmt.Printf("📚 Pagination detected for query %d, fetching next page\n", i+1)
+				}
+				// Create a new query with the page token
+				queryWithToken := currentQueries[i]
+				queryWithToken.PageToken = result.NextPageToken
+				nextQueries = append(nextQueries, queryWithToken)
+			}
 		}
 
-		// Extract severity and score from detailed vulnerability data
-		severity, score := extractSeverityFromDetail(vulnDetail)
-
-		references := make([]string, 0, len(vulnDetail.References))
-		for _, ref := range vulnDetail.References {
-			references = append(references, ref.URL)
-		}
-
-		result := CVEResult{
-			CVE:         vulnDetail.ID,
-			Component:   component.Name,
-			Version:     component.Version,
-			Severity:    severity,
-			Score:       score,
-			Description: vulnDetail.Summary,
-			References:  references,
-		}
-
-		results = append(results, result)
+		// Update current queries for next iteration
+		currentQueries = nextQueries
 	}
 
-	return results, nil
-}
-
-// queryOSVWithPURL queries OSV API using PURL to get vulnerability IDs
-func queryOSVWithPURL(purl string) ([]string, error) {
-	const osvURL = "https://api.osv.dev/v1/query"
-
-	queryData := map[string]interface{}{
-		"package": map[string]string{
-			"purl": purl,
-		},
-	}
-
-	jsonData, err := json.Marshal(queryData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal PURL query: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", osvURL, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create PURL request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query OSV API with PURL: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OSV PURL API returned status %d", resp.StatusCode)
-	}
-
-	var osvResp OSVResponse
-	if err := json.NewDecoder(resp.Body).Decode(&osvResp); err != nil {
-		return nil, fmt.Errorf("failed to decode OSV PURL response: %w", err)
-	}
-
-	// Extract vulnerability IDs
-	var vulnIDs []string
-	for _, vuln := range osvResp.Vulns {
-		vulnIDs = append(vulnIDs, vuln.ID)
-	}
-
-	return vulnIDs, nil
+	return &OSVBatchResponse{Results: allResults}, nil
 }
 
 // getVulnerabilityDetails fetches detailed vulnerability information by ID
