@@ -71,6 +71,46 @@ changelog:
     - title: Others
       order: 999
 
+dockers:
+  - image_templates:
+      - "ghcr.io/iron-kite/rudor:{{ .Version }}-amd64"
+    use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title=Rudor"
+      - "--label=org.opencontainers.image.description=Lightweight SBOM generator with CVE scanning"
+      - "--label=org.opencontainers.image.source=https://github.com/iron-kite/rudor"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .Commit }}"
+
+  - image_templates:
+      - "ghcr.io/iron-kite/rudor:{{ .Version }}-arm64"
+    use: buildx
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title=Rudor"
+      - "--label=org.opencontainers.image.description=Lightweight SBOM generator with CVE scanning"
+      - "--label=org.opencontainers.image.source=https://github.com/iron-kite/rudor"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .Commit }}"
+
+docker_manifests:
+  - name_template: "ghcr.io/iron-kite/rudor:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/iron-kite/rudor:{{ .Version }}-amd64"
+      - "ghcr.io/iron-kite/rudor:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/iron-kite/rudor:latest"
+    image_templates:
+      - "ghcr.io/iron-kite/rudor:{{ .Version }}-amd64"
+      - "ghcr.io/iron-kite/rudor:{{ .Version }}-arm64"
+
 release:
   github:
     owner: iron-kite

@@ -1,17 +1,10 @@
 FROM python:3.12-slim
 
-ARG TARGETARCH
-
-LABEL org.opencontainers.image.title="Rudor"
-LABEL org.opencontainers.image.description="Lightweight SBOM generator with CVE scanning"
-LABEL org.opencontainers.image.source="https://github.com/iron-kite/rudor"
-LABEL org.opencontainers.image.licenses="See LICENSE file"
-
 WORKDIR /app
 
 RUN groupadd -r nonroot && useradd -r -g nonroot nonroot
 
-COPY --chown=nonroot:nonroot dist/rudor_${TARGETARCH}_*/rudor /app/rudor
+COPY --chown=nonroot:nonroot rudor /app/rudor
 
 USER nonroot:nonroot
 
