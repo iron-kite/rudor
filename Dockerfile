@@ -9,10 +9,9 @@ LABEL org.opencontainers.image.licenses="See LICENSE file"
 
 WORKDIR /app
 
-# Create non-root user
 RUN groupadd -r nonroot && useradd -r -g nonroot nonroot
 
-COPY --chown=nonroot:nonroot build/rudor-linux-${TARGETARCH} /app/rudor
+COPY --chown=nonroot:nonroot dist/rudor_${TARGETARCH}_*/rudor /app/rudor
 
 USER nonroot:nonroot
 

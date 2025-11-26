@@ -1,0 +1,70 @@
+name: 'Rudor SBOM Scanner'
+description: 'Generate Software Bill of Materials (SBOM) and scan for vulnerabilities using Rudor'
+author: 'iron-kite'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Path to the project directory to scan'
+    required: false
+    default: '.'
+
+  output:
+    description: 'Output file path for the SBOM'
+    required: false
+    default: 'bom.json'
+
+  project-type:
+    description: 'Project type (auto-detected if not specified). Examples: dotnet, nodejs, python, java, go, rust'
+    required: false
+    default: ''
+
+  disable-cve:
+    description: 'Disable automatic CVE vulnerability scanning'
+    required: false
+    default: 'false'
+
+  verbose:
+    description: 'Enable verbose output for debugging'
+    required: false
+    default: 'false'
+
+  fail-on-severity:
+    description: 'Fail the build if vulnerabilities are found at or above this severity (critical, high, medium, low, none)'
+    required: false
+    default: 'none'
+
+  cve-report-path:
+    description: 'Output path for the CVE report JSON file'
+    required: false
+    default: 'cve-report.json'
+
+outputs:
+  sbom-path:
+    description: 'Path to the generated SBOM file'
+
+  cve-report-path:
+    description: 'Path to the generated CVE report file'
+
+  vulnerabilities-found:
+    description: 'Whether vulnerabilities were found (true/false)'
+
+  critical-count:
+    description: 'Number of critical severity vulnerabilities found'
+
+  high-count:
+    description: 'Number of high severity vulnerabilities found'
+
+  medium-count:
+    description: 'Number of medium severity vulnerabilities found'
+
+  low-count:
+    description: 'Number of low severity vulnerabilities found'
+
+runs:
+  using: 'docker'
+  image: 'docker://ghcr.io/iron-kite/rudor:sha-30ba766'
+  entrypoint: '/entrypoint.py'
