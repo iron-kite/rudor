@@ -365,7 +365,7 @@ func getVulnerabilityDetails(vulnID string) (*OSVVuln, error) {
 	// Read the entire response body into a byte slice
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalf("Error reading response body: %v", err)
+		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 
 	// Convert the byte slice to a string

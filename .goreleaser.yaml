@@ -71,6 +71,9 @@ changelog:
     - title: Others
       order: 999
 
+sboms:
+  - artifacts: archive
+
 release:
   github:
     owner: iron-kite
@@ -82,3 +85,14 @@ release:
     ## Rudor {{ .Tag }} Release
 
     **Full Changelog**: https://github.com/iron-kite/rudor/compare/{{ .PreviousTag }}...{{ .Tag }}
+  footer: |
+    ---
+
+    ### Verification
+
+    All release artifacts include SHA256 checksums in `checksums.txt`.
+
+    To verify a download:
+    ```bash
+    sha256sum -c checksums.txt --ignore-missing
+    ```
