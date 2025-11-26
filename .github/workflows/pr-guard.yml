@@ -1,8 +1,6 @@
-name: Build
+name: Pull request guard
 
 on:
-  push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
 
