@@ -71,9 +71,6 @@ changelog:
     - title: Others
       order: 999
 
-sboms:
-  - artifacts: archive
-
 release:
   github:
     owner: iron-kite
