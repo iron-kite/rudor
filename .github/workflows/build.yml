@@ -54,18 +54,6 @@ jobs:
             goos: linux
             goarch: arm64
             artifact_name: rudor-linux-arm64
-          - os: macos-latest
-            goos: darwin
-            goarch: amd64
-            artifact_name: rudor-darwin-amd64
-          - os: macos-latest
-            goos: darwin
-            goarch: arm64
-            artifact_name: rudor-darwin-arm64
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-            artifact_name: rudor-windows-amd64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -90,11 +78,12 @@ jobs:
         run: go build -ldflags="-s -w" -o ../build/${{ matrix.artifact_name }} .
 
       - name: Upload build artifacts
+        if: ${{ github.event != 'pull_request' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: build/${{ matrix.artifact_name }}
-          retention-days: 7
+          retention-days: 1
 
   security:
     name: Security Scan
@@ -123,14 +112,7 @@ jobs:
         with:
           name: gosec-results
           path: results.json
-          retention-days: 7
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: 'fs'
-          scan-ref: 'src'
-          format: 'table'
+          retention-days: 1
 
   dependency-check:
     name: Dependency Check
@@ -152,58 +134,3 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
-
-  docker-build:
-    name: Docker Build
-    needs: [build]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download linux/amd64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: rudor-linux-amd64
-          path: build/
-
-      - name: Download linux/arm64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: rudor-linux-arm64
-          path: build/
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
