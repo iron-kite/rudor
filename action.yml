@@ -42,6 +42,11 @@ inputs:
     required: false
     default: 'cve-report.json'
 
+  version:
+    description: 'Rudor version to use'
+    required: false
+    default: 'latest'
+
 outputs:
   sbom-path:
     description: 'Path to the generated SBOM file'
@@ -66,5 +71,5 @@ outputs:
 
 runs:
   using: 'docker'
-  image: 'docker://ghcr.io/iron-kite/rudor:sha-30ba766'
+  image: 'docker://ghcr.io/iron-kite/rudor:${{ inputs.version }}'
   entrypoint: '/entrypoint.py'
