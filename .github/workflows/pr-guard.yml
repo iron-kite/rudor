@@ -80,4 +80,4 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: release --snapshot --skip=publish --clean
+          args: release --snapshot --skip=publish --clean --single-target
