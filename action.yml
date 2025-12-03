@@ -71,5 +71,5 @@ outputs:
 
 runs:
   using: 'docker'
-  image: 'docker://ghcr.io/iron-kite/rudor:${{ inputs.version }}'
+  image: 'docker://ghcr.io/iron-kite/rudor:v0.1.1'
   entrypoint: '/entrypoint.py'
