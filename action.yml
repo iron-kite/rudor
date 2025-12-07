@@ -60,11 +60,13 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Pull Rudor image
+      shell: bash
+      run: docker pull ghcr.io/iron-kite/rudor:latest
+
     - name: Run Rudor
-      id: rudor
       shell: bash
       run: |
-        # Build docker command
         CMD="docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace"
         CMD="$CMD ghcr.io/iron-kite/rudor:latest generate"
         CMD="$CMD ${{ inputs.path }}"
@@ -82,13 +84,14 @@ runs:
           CMD="$CMD --no-cve"
         fi
 
-        # Run rudor
         $CMD
 
-        # Set outputs
+    - name: Set outputs
+      id: rudor
+      shell: bash
+      run: |
         echo "sbom-path=${{ inputs.output }}" >> "$GITHUB_OUTPUT"
 
-        # Parse CVE results if available
         if [[ -f "cve-report.json" ]]; then
           total=$(jq -r '.total_issues' cve-report.json)
           if [[ "$total" -gt 0 ]]; then

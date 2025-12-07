@@ -114,15 +114,10 @@ func extractEmbeddedBinary(verbose bool) (string, error) {
 		return "", err
 	}
 
-	// Get the current working directory
-	path, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("failed to get current working directory: %w", err)
-	}
 	// Build versioned cache filename (e.g., cdxgen-1.0.0.exe)
 	extension := filepath.Ext(binaryName)
 	cachedFileName := fmt.Sprintf("cdxgen-%s%s", version, extension)
-	cachedPath := filepath.Join(path, cachedFileName)
+	cachedPath := filepath.Join(os.TempDir(), cachedFileName)
 
 	// Check if cached binary already exists
 	if fileExists(cachedPath) {
