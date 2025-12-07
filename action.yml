@@ -72,4 +72,14 @@ outputs:
 runs:
   using: 'docker'
   image: 'docker://ghcr.io/iron-kite/rudor:latest'
-  entrypoint: '/entrypoint.py'
+  args:
+    - generate
+    - ${{ inputs.path }}
+    - -o
+    - ${{ inputs.output }}
+    - ${{ inputs.project-type && format('-t {0}', inputs.project-type) || '' }}
+    - ${{ inputs.verbose == 'true' && '-v' || '' }}
+    - ${{ inputs.disable-cve == 'true' && '--no-cve' || '' }}
+    - --cve-report
+    - ${{ inputs.cve-report-path }}
+    - ${{ inputs.fail-on-severity != 'none' && format('--fail-on-severity {0}', inputs.fail-on-severity) || '' }}
