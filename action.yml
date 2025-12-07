@@ -69,7 +69,7 @@ runs:
       shell: bash
       run: |
         CMD="docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace"
-        CMD="$CMD ghcr.io/iron-kite/rudor:$(echo ${{ github.sha }} | cut -c1-7) generate"
+        CMD="$CMD ghcr.io/iron-kite/rudor:${{ github.action_ref }} generate"
         CMD="$CMD ${{ inputs.path }}"
         CMD="$CMD -o ${{ inputs.output }}"
 
