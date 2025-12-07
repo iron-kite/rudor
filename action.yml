@@ -33,43 +33,121 @@ inputs:
     default: 'false'
 
   fail-on-severity:
-    description: 'Fail the build if vulnerabilities are found at or above this severity (critical, high, medium, low, none)'
+    description: 'Fail if vulnerabilities at or above this severity are found (critical, high, medium, low)'
     required: false
-    default: 'none'
-
-  cve-report-path:
-    description: 'Output path for the CVE report JSON file'
-    required: false
-    default: 'cve-report.json'
-
-  version:
-    description: 'Rudor version to use'
-    required: false
-    default: 'latest'
+    default: ''
 
 outputs:
   sbom-path:
     description: 'Path to the generated SBOM file'
-
-  cve-report-path:
-    description: 'Path to the generated CVE report file'
+    value: ${{ steps.rudor.outputs.sbom-path }}
 
   vulnerabilities-found:
     description: 'Whether vulnerabilities were found (true/false)'
+    value: ${{ steps.rudor.outputs.vulnerabilities-found }}
 
   critical-count:
     description: 'Number of critical severity vulnerabilities found'
+    value: ${{ steps.rudor.outputs.critical-count }}
 
   high-count:
     description: 'Number of high severity vulnerabilities found'
+    value: ${{ steps.rudor.outputs.high-count }}
 
   medium-count:
     description: 'Number of medium severity vulnerabilities found'
+    value: ${{ steps.rudor.outputs.medium-count }}
 
   low-count:
     description: 'Number of low severity vulnerabilities found'
+    value: ${{ steps.rudor.outputs.low-count }}
 
 runs:
-  using: 'docker'
-  image: 'docker://ghcr.io/iron-kite/rudor:${{ inputs.version }}'
-  entrypoint: '/entrypoint.py'
+  using: 'composite'
+  steps:
+    - name: Run Rudor
+      shell: bash
+      run: |
+        CMD="docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace"
+        CMD="$CMD ghcr.io/iron-kite/rudor:$(echo ${{ github.sha }} | cut -c1-7) generate"
+        CMD="$CMD ${{ inputs.path }}"
+        CMD="$CMD -o ${{ inputs.output }}"
+
+        if [[ -n "${{ inputs.project-type }}" ]]; then
+          CMD="$CMD -t ${{ inputs.project-type }}"
+        fi
+
+        if [[ "${{ inputs.verbose }}" == "true" ]]; then
+          CMD="$CMD -v"
+        fi
+
+        if [[ "${{ inputs.disable-cve }}" == "true" ]]; then
+          CMD="$CMD --no-cve"
+        fi
+
+        $CMD
+
+    - name: Set outputs
+      id: rudor
+      shell: bash
+      run: |
+        echo "sbom-path=${{ inputs.output }}" >> "$GITHUB_OUTPUT"
+
+        if [[ -f "cve-report.json" ]]; then
+          total=$(jq -r '.total_issues' cve-report.json)
+          if [[ "$total" -gt 0 ]]; then
+            echo "vulnerabilities-found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "vulnerabilities-found=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "critical-count=$(jq -r '.critical' cve-report.json)" >> "$GITHUB_OUTPUT"
+          echo "high-count=$(jq -r '.high' cve-report.json)" >> "$GITHUB_OUTPUT"
+          echo "medium-count=$(jq -r '.medium' cve-report.json)" >> "$GITHUB_OUTPUT"
+          echo "low-count=$(jq -r '.low' cve-report.json)" >> "$GITHUB_OUTPUT"
+        else
+          echo "vulnerabilities-found=false" >> "$GITHUB_OUTPUT"
+          echo "critical-count=0" >> "$GITHUB_OUTPUT"
+          echo "high-count=0" >> "$GITHUB_OUTPUT"
+          echo "medium-count=0" >> "$GITHUB_OUTPUT"
+          echo "low-count=0" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Check severity threshold
+      if: inputs.fail-on-severity != ''
+      shell: bash
+      run: |
+        SEVERITY="${{ inputs.fail-on-severity }}"
+        CRITICAL="${{ steps.rudor.outputs.critical-count }}"
+        HIGH="${{ steps.rudor.outputs.high-count }}"
+        MEDIUM="${{ steps.rudor.outputs.medium-count }}"
+        LOW="${{ steps.rudor.outputs.low-count }}"
+
+        case "$SEVERITY" in
+          critical)
+            if [[ "$CRITICAL" -gt 0 ]]; then
+              echo "::error::Found $CRITICAL critical vulnerabilities"
+              exit 1
+            fi
+            ;;
+          high)
+            if [[ "$CRITICAL" -gt 0 || "$HIGH" -gt 0 ]]; then
+              echo "::error::Found $CRITICAL critical and $HIGH high vulnerabilities"
+              exit 1
+            fi
+            ;;
+          medium)
+            if [[ "$CRITICAL" -gt 0 || "$HIGH" -gt 0 || "$MEDIUM" -gt 0 ]]; then
+              echo "::error::Found $CRITICAL critical, $HIGH high, and $MEDIUM medium vulnerabilities"
+              exit 1
+            fi
+            ;;
+          low)
+            if [[ "$CRITICAL" -gt 0 || "$HIGH" -gt 0 || "$MEDIUM" -gt 0 || "$LOW" -gt 0 ]]; then
+              echo "::error::Found $CRITICAL critical, $HIGH high, $MEDIUM medium, and $LOW low vulnerabilities"
+              exit 1
+            fi
+            ;;
+          *)
+            echo "::warning::Unknown severity level: $SEVERITY"
+            ;;
+        esac
