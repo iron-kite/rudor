@@ -32,43 +32,6 @@ inputs:
     required: false
     default: 'false'
 
-  fail-on-severity:
-    description: 'Fail the build if vulnerabilities are found at or above this severity (critical, high, medium, low, none)'
-    required: false
-    default: 'none'
-
-  cve-report-path:
-    description: 'Output path for the CVE report JSON file'
-    required: false
-    default: 'cve-report.json'
-
-  version:
-    description: 'Rudor version to use'
-    required: false
-    default: 'latest'
-
-outputs:
-  sbom-path:
-    description: 'Path to the generated SBOM file'
-
-  cve-report-path:
-    description: 'Path to the generated CVE report file'
-
-  vulnerabilities-found:
-    description: 'Whether vulnerabilities were found (true/false)'
-
-  critical-count:
-    description: 'Number of critical severity vulnerabilities found'
-
-  high-count:
-    description: 'Number of high severity vulnerabilities found'
-
-  medium-count:
-    description: 'Number of medium severity vulnerabilities found'
-
-  low-count:
-    description: 'Number of low severity vulnerabilities found'
-
 runs:
   using: 'docker'
   image: 'docker://ghcr.io/iron-kite/rudor:latest'
@@ -80,6 +43,3 @@ runs:
     - ${{ inputs.project-type && format('-t {0}', inputs.project-type) || '' }}
     - ${{ inputs.verbose == 'true' && '-v' || '' }}
     - ${{ inputs.disable-cve == 'true' && '--no-cve' || '' }}
-    - --cve-report
-    - ${{ inputs.cve-report-path }}
-    - ${{ inputs.fail-on-severity != 'none' && format('--fail-on-severity {0}', inputs.fail-on-severity) || '' }}
