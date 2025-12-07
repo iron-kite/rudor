@@ -70,7 +70,7 @@ runs:
       env:
         ACTION_REF: ${{ github.action_ref }}
       run: |
-        CMD="docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace"
+        CMD="docker run --rm --user $(id -u):$(id -g) -v ${{ github.workspace }}:/workspace -w /workspace"
         CMD="$CMD ghcr.io/iron-kite/rudor:${ACTION_REF#v} generate"
         CMD="$CMD ${{ inputs.path }}"
         CMD="$CMD -o ${{ inputs.output }}"
