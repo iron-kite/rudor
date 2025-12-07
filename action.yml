@@ -32,6 +32,11 @@ inputs:
     required: false
     default: 'false'
 
+  fail-on-severity:
+    description: 'Fail if vulnerabilities at or above this severity are found (critical, high, medium, low)'
+    required: false
+    default: ''
+
 outputs:
   sbom-path:
     description: 'Path to the generated SBOM file'
@@ -106,3 +111,43 @@ runs:
           echo "medium-count=0" >> "$GITHUB_OUTPUT"
           echo "low-count=0" >> "$GITHUB_OUTPUT"
         fi
+
+    - name: Check severity threshold
+      if: inputs.fail-on-severity != ''
+      shell: bash
+      run: |
+        SEVERITY="${{ inputs.fail-on-severity }}"
+        CRITICAL="${{ steps.rudor.outputs.critical-count }}"
+        HIGH="${{ steps.rudor.outputs.high-count }}"
+        MEDIUM="${{ steps.rudor.outputs.medium-count }}"
+        LOW="${{ steps.rudor.outputs.low-count }}"
+
+        case "$SEVERITY" in
+          critical)
+            if [[ "$CRITICAL" -gt 0 ]]; then
+              echo "::error::Found $CRITICAL critical vulnerabilities"
+              exit 1
+            fi
+            ;;
+          high)
+            if [[ "$CRITICAL" -gt 0 || "$HIGH" -gt 0 ]]; then
+              echo "::error::Found $CRITICAL critical and $HIGH high vulnerabilities"
+              exit 1
+            fi
+            ;;
+          medium)
+            if [[ "$CRITICAL" -gt 0 || "$HIGH" -gt 0 || "$MEDIUM" -gt 0 ]]; then
+              echo "::error::Found $CRITICAL critical, $HIGH high, and $MEDIUM medium vulnerabilities"
+              exit 1
+            fi
+            ;;
+          low)
+            if [[ "$CRITICAL" -gt 0 || "$HIGH" -gt 0 || "$MEDIUM" -gt 0 || "$LOW" -gt 0 ]]; then
+              echo "::error::Found $CRITICAL critical, $HIGH high, $MEDIUM medium, and $LOW low vulnerabilities"
+              exit 1
+            fi
+            ;;
+          *)
+            echo "::warning::Unknown severity level: $SEVERITY"
+            ;;
+        esac
