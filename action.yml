@@ -32,14 +32,78 @@ inputs:
     required: false
     default: 'false'
 
+outputs:
+  sbom-path:
+    description: 'Path to the generated SBOM file'
+    value: ${{ steps.rudor.outputs.sbom-path }}
+
+  vulnerabilities-found:
+    description: 'Whether vulnerabilities were found (true/false)'
+    value: ${{ steps.rudor.outputs.vulnerabilities-found }}
+
+  critical-count:
+    description: 'Number of critical severity vulnerabilities found'
+    value: ${{ steps.rudor.outputs.critical-count }}
+
+  high-count:
+    description: 'Number of high severity vulnerabilities found'
+    value: ${{ steps.rudor.outputs.high-count }}
+
+  medium-count:
+    description: 'Number of medium severity vulnerabilities found'
+    value: ${{ steps.rudor.outputs.medium-count }}
+
+  low-count:
+    description: 'Number of low severity vulnerabilities found'
+    value: ${{ steps.rudor.outputs.low-count }}
+
 runs:
-  using: 'docker'
-  image: 'docker://ghcr.io/iron-kite/rudor:latest'
-  args:
-    - generate
-    - ${{ inputs.path }}
-    - -o
-    - ${{ inputs.output }}
-    - ${{ inputs.project-type && format('-t {0}', inputs.project-type) || '' }}
-    - ${{ inputs.verbose == 'true' && '-v' || '' }}
-    - ${{ inputs.disable-cve == 'true' && '--no-cve' || '' }}
+  using: 'composite'
+  steps:
+    - name: Run Rudor
+      id: rudor
+      shell: bash
+      run: |
+        # Build docker command
+        CMD="docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace"
+        CMD="$CMD ghcr.io/iron-kite/rudor:latest generate"
+        CMD="$CMD ${{ inputs.path }}"
+        CMD="$CMD -o ${{ inputs.output }}"
+
+        if [[ -n "${{ inputs.project-type }}" ]]; then
+          CMD="$CMD -t ${{ inputs.project-type }}"
+        fi
+
+        if [[ "${{ inputs.verbose }}" == "true" ]]; then
+          CMD="$CMD -v"
+        fi
+
+        if [[ "${{ inputs.disable-cve }}" == "true" ]]; then
+          CMD="$CMD --no-cve"
+        fi
+
+        # Run rudor
+        $CMD
+
+        # Set outputs
+        echo "sbom-path=${{ inputs.output }}" >> "$GITHUB_OUTPUT"
+
+        # Parse CVE results if available
+        if [[ -f "cve-report.json" ]]; then
+          total=$(jq -r '.total_issues' cve-report.json)
+          if [[ "$total" -gt 0 ]]; then
+            echo "vulnerabilities-found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "vulnerabilities-found=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "critical-count=$(jq -r '.critical' cve-report.json)" >> "$GITHUB_OUTPUT"
+          echo "high-count=$(jq -r '.high' cve-report.json)" >> "$GITHUB_OUTPUT"
+          echo "medium-count=$(jq -r '.medium' cve-report.json)" >> "$GITHUB_OUTPUT"
+          echo "low-count=$(jq -r '.low' cve-report.json)" >> "$GITHUB_OUTPUT"
+        else
+          echo "vulnerabilities-found=false" >> "$GITHUB_OUTPUT"
+          echo "critical-count=0" >> "$GITHUB_OUTPUT"
+          echo "high-count=0" >> "$GITHUB_OUTPUT"
+          echo "medium-count=0" >> "$GITHUB_OUTPUT"
+          echo "low-count=0" >> "$GITHUB_OUTPUT"
+        fi
