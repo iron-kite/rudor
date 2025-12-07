@@ -67,9 +67,11 @@ runs:
   steps:
     - name: Run Rudor
       shell: bash
+      env:
+        ACTION_REF: ${{ github.action_ref }}
       run: |
         CMD="docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace"
-        CMD="$CMD ghcr.io/iron-kite/rudor:${{ github.action_ref }} generate"
+        CMD="$CMD ghcr.io/iron-kite/rudor:${ACTION_REF#v} generate"
         CMD="$CMD ${{ inputs.path }}"
         CMD="$CMD -o ${{ inputs.output }}"
 
