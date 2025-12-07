@@ -60,15 +60,11 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Pull Rudor image
-      shell: bash
-      run: docker pull ghcr.io/iron-kite/rudor:latest
-
     - name: Run Rudor
       shell: bash
       run: |
-        CMD="docker run --user root --rm -v ${{ github.workspace }}:/workspace -w /workspace"
-        CMD="$CMD ghcr.io/iron-kite/rudor:latest generate"
+        CMD="docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace"
+        CMD="$CMD ghcr.io/iron-kite/rudor:$(echo ${{ github.sha }} | cut -c1-7) generate"
         CMD="$CMD ${{ inputs.path }}"
         CMD="$CMD -o ${{ inputs.output }}"
 
