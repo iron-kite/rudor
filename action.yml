@@ -67,7 +67,7 @@ runs:
     - name: Run Rudor
       shell: bash
       run: |
-        CMD="docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace"
+        CMD="docker run --user root --rm -v ${{ github.workspace }}:/workspace -w /workspace"
         CMD="$CMD ghcr.io/iron-kite/rudor:latest generate"
         CMD="$CMD ${{ inputs.path }}"
         CMD="$CMD -o ${{ inputs.output }}"
