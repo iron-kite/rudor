@@ -112,6 +112,116 @@ docker build -t rudor:latest .
 docker buildx build --platform linux/amd64,linux/arm64 -t rudor:latest .
 ```
 
+## GitHub Action
+
+Rudor is available as a GitHub Action for seamless integration into your CI/CD pipelines.
+
+### Basic Usage
+
+```yaml
+- name: Generate SBOM
+  uses: iron-kite/rudor@v1
+```
+
+### Full Configuration
+
+```yaml
+- name: Generate SBOM and scan for vulnerabilities
+  uses: iron-kite/rudor@v1
+  id: rudor
+  with:
+    # Path to scan (default: '.')
+    path: '.'
+
+    # Output file path (default: 'bom.json')
+    output: 'sbom.json'
+
+    # Project type - auto-detected if not specified
+    # Options: dotnet, nodejs, python, java, go, rust, etc.
+    project-type: ''
+
+    # Disable CVE vulnerability scanning (default: 'false')
+    disable-cve: 'false'
+
+    # Enable verbose output (default: 'false')
+    verbose: 'false'
+
+    # Fail if vulnerabilities at or above severity found
+    # Options: critical, high, medium, low (default: '' - no failure)
+    fail-on-severity: 'high'
+
+    # Upload SBOM as artifact (default: 'false')
+    upload-sbom: 'true'
+
+    # Upload CVE report as artifact (default: 'false')
+    upload-cve-report: 'true'
+
+    # Generate GitHub job summary (default: 'true')
+    summary: 'true'
+```
+
+### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `sbom-path` | Path to the generated SBOM file |
+| `vulnerabilities-found` | Whether vulnerabilities were found (`true`/`false`) |
+| `critical-count` | Number of critical severity vulnerabilities |
+| `high-count` | Number of high severity vulnerabilities |
+| `medium-count` | Number of medium severity vulnerabilities |
+| `low-count` | Number of low severity vulnerabilities |
+
+### Examples
+
+#### Generate SBOM and fail on critical vulnerabilities
+
+```yaml
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SBOM
+        uses: iron-kite/rudor@v1
+        with:
+          fail-on-severity: 'critical'
+          upload-sbom: 'true'
+          upload-cve-report: 'true'
+```
+
+#### Use outputs in subsequent steps
+
+```yaml
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SBOM
+        uses: iron-kite/rudor@v1
+        id: rudor
+
+      - name: Check results
+        run: |
+          echo "SBOM: ${{ steps.rudor.outputs.sbom-path }}"
+          echo "Vulnerabilities found: ${{ steps.rudor.outputs.vulnerabilities-found }}"
+          echo "Critical: ${{ steps.rudor.outputs.critical-count }}"
+          echo "High: ${{ steps.rudor.outputs.high-count }}"
+```
+
+#### Scan specific subdirectory
+
+```yaml
+- name: Generate SBOM for backend
+  uses: iron-kite/rudor@v1
+  with:
+    path: './backend'
+    output: 'backend-sbom.json'
+    project-type: 'go'
+```
+
 ## Supported Project Types
 
 Rudor leverages cdxgen's extensive project type support, including:
