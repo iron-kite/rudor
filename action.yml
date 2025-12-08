@@ -139,24 +139,23 @@ runs:
         LOW="${{ steps.rudor.outputs.low-count }}"
         TOTAL=$((CRITICAL + HIGH + MEDIUM + LOW))
 
-        echo "## 🛡️ Rudor SBOM Scanner Results" >> "$GITHUB_STEP_SUMMARY"
-        echo "" >> "$GITHUB_STEP_SUMMARY"
-        echo "### SBOM" >> "$GITHUB_STEP_SUMMARY"
-        echo "- **Output:** \`${{ inputs.output }}\`" >> "$GITHUB_STEP_SUMMARY"
-        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "## Rudor Security Scan" >> "$GITHUB_STEP_SUMMARY"
 
-        if [[ "${{ inputs.disable-cve }}" != "true" ]]; then
-          echo "### Vulnerabilities" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$TOTAL" -eq 0 ]]; then
-            echo "✅ No vulnerabilities found" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "| Severity | Count |" >> "$GITHUB_STEP_SUMMARY"
-            echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
-            echo "| 🔴 Critical | $CRITICAL |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| 🟠 High | $HIGH |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| 🟡 Medium | $MEDIUM |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| 🔵 Low | $LOW |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| **Total** | **$TOTAL** |" >> "$GITHUB_STEP_SUMMARY"
+        if [[ "$TOTAL" -eq 0 ]]; then
+          echo "✅ No vulnerabilities found" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "**Found $TOTAL vulnerabilities** ($CRITICAL critical, $HIGH high, $MEDIUM medium, $LOW low)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ -f "cve-report.json" ]]; then
+            echo "<details>" >> "$GITHUB_STEP_SUMMARY"
+            echo "<summary>View details</summary>" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Severity | CVE | Component | Version |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|----------|-----|-----------|---------|" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.vulnerabilities | sort_by(.severity | if . == "CRITICAL" then 0 elif . == "HIGH" then 1 elif . == "MEDIUM" then 2 else 3 end) | .[] | "| \(.severity) | [\(.cve)](https://osv.dev/vulnerability/\(.cve)) | \(.component) | \(.version) |"' cve-report.json >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "</details>" >> "$GITHUB_STEP_SUMMARY"
           fi
         fi
 
