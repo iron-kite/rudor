@@ -37,6 +37,21 @@ inputs:
     required: false
     default: ''
 
+  upload-sbom:
+    description: 'Upload SBOM as artifact'
+    required: false
+    default: 'false'
+
+  upload-cve-report:
+    description: 'Upload CVE report as artifact'
+    required: false
+    default: 'false'
+
+  summary:
+    description: 'Generate GitHub job summary'
+    required: false
+    default: 'true'
+
 outputs:
   sbom-path:
     description: 'Path to the generated SBOM file'
@@ -114,6 +129,37 @@ runs:
           echo "low-count=0" >> "$GITHUB_OUTPUT"
         fi
 
+    - name: Generate summary
+      if: inputs.summary == 'true'
+      shell: bash
+      run: |
+        CRITICAL="${{ steps.rudor.outputs.critical-count }}"
+        HIGH="${{ steps.rudor.outputs.high-count }}"
+        MEDIUM="${{ steps.rudor.outputs.medium-count }}"
+        LOW="${{ steps.rudor.outputs.low-count }}"
+        TOTAL=$((CRITICAL + HIGH + MEDIUM + LOW))
+
+        echo "## 🛡️ Rudor SBOM Scanner Results" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "### SBOM" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Output:** \`${{ inputs.output }}\`" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+
+        if [[ "${{ inputs.disable-cve }}" != "true" ]]; then
+          echo "### Vulnerabilities" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$TOTAL" -eq 0 ]]; then
+            echo "✅ No vulnerabilities found" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Severity | Count |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "| 🔴 Critical | $CRITICAL |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| 🟠 High | $HIGH |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| 🟡 Medium | $MEDIUM |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| 🔵 Low | $LOW |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| **Total** | **$TOTAL** |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        fi
+
     - name: Check severity threshold
       if: inputs.fail-on-severity != ''
       shell: bash
@@ -153,3 +199,17 @@ runs:
             echo "::warning::Unknown severity level: $SEVERITY"
             ;;
         esac
+
+    - name: Upload SBOM artifact
+      if: always() && inputs.upload-sbom == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom
+        path: ${{ inputs.output }}
+
+    - name: Upload CVE report artifact
+      if: always() && inputs.upload-cve-report == 'true' && inputs.disable-cve != 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: cve-report
+        path: cve-report.json
