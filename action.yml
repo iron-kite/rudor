@@ -201,14 +201,14 @@ runs:
 
     - name: Upload SBOM artifact
       if: always() && inputs.upload-sbom == 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: sbom
         path: ${{ inputs.output }}
 
     - name: Upload CVE report artifact
       if: always() && inputs.upload-cve-report == 'true' && inputs.disable-cve != 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: cve-report
         path: cve-report.json
